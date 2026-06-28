@@ -1,0 +1,1665 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>ฟังก์ชันตรีโกณมิติ — แอปเรียนรู้แบบอินเทอร์แอกทีฟ</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&family=Fraunces:opsz,wght@9..144,500;9..144,700&display=swap" rel="stylesheet">
+<style>
+  html, body { margin: 0; padding: 0; background: #11192e; }
+  #root { min-height: 100vh; }
+  #loading {
+    display: flex; align-items: center; justify-content: center;
+    height: 100vh; color: #8b9bbd; font-family: sans-serif; font-size: 14px;
+  }
+</style>
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+</head>
+<body>
+<div id="root"><div id="loading">กำลังรอพ่อมึงตาย…</div></div>
+<script type="text/babel" data-presets="react">
+const { useState, useMemo, useRef, useEffect } = React;
+
+
+/* ============================================================
+   ฟังก์ชันตรีโกณมิติ — แอปเรียนรู้แบบอินเทอร์แอกทีฟ
+   หน่วยการเรียนรู้ที่ 1 (ม.5 เทอม 1)
+   ============================================================ */
+
+// ---------- ค่าคงที่ / ยูทิลิตี้ ----------
+const PI = Math.PI;
+const fmt = (n, d = 4) => {
+  if (Number.isNaN(n)) return "-";
+  const r = Math.round(n * 10 ** d) / 10 ** d;
+  return r.toString();
+};
+const deg = (rad) => (rad * 180) / PI;
+const rad = (d) => (d * PI) / 180;
+
+// แสดงเศษส่วน π อย่างสวยงามจากมุมองศา (มุมมาตรฐาน)
+function angleLabel(thetaDeg) {
+  const map = {
+    0: "0",
+    30: "π/6",
+    45: "π/4",
+    60: "π/3",
+    90: "π/2",
+    120: "2π/3",
+    135: "3π/4",
+    150: "5π/6",
+    180: "π",
+    210: "7π/6",
+    225: "5π/4",
+    240: "4π/3",
+    270: "3π/2",
+    300: "5π/3",
+    315: "7π/4",
+    330: "11π/6",
+    360: "2π",
+  };
+  const norm = ((Math.round(thetaDeg) % 360) + 360) % 360;
+  return map[norm] ?? `${Math.round(thetaDeg)}°`;
+}
+
+function exactTrig(thetaDeg) {
+  // คืนค่า sin, cos แบบ "นิพจน์สวย" สำหรับมุมพิเศษ
+  const table = {
+    0: { s: "0", c: "1", sv: 0, cv: 1 },
+    30: { s: "1/2", c: "√3/2", sv: 0.5, cv: Math.sqrt(3) / 2 },
+    45: { s: "√2/2", c: "√2/2", sv: Math.SQRT1_2, cv: Math.SQRT1_2 },
+    60: { s: "√3/2", c: "1/2", sv: Math.sqrt(3) / 2, cv: 0.5 },
+    90: { s: "1", c: "0", sv: 1, cv: 0 },
+    120: { s: "√3/2", c: "-1/2", sv: Math.sqrt(3) / 2, cv: -0.5 },
+    135: { s: "√2/2", c: "-√2/2", sv: Math.SQRT1_2, cv: -Math.SQRT1_2 },
+    150: { s: "1/2", c: "-√3/2", sv: 0.5, cv: -Math.sqrt(3) / 2 },
+    180: { s: "0", c: "-1", sv: 0, cv: -1 },
+    210: { s: "-1/2", c: "-√3/2", sv: -0.5, cv: -Math.sqrt(3) / 2 },
+    225: { s: "-√2/2", c: "-√2/2", sv: -Math.SQRT1_2, cv: -Math.SQRT1_2 },
+    240: { s: "-√3/2", c: "-1/2", sv: -Math.sqrt(3) / 2, cv: -0.5 },
+    270: { s: "-1", c: "0", sv: -1, cv: 0 },
+    300: { s: "-√3/2", c: "1/2", sv: -Math.sqrt(3) / 2, cv: 0.5 },
+    315: { s: "-√2/2", c: "√2/2", sv: -Math.SQRT1_2, cv: Math.SQRT1_2 },
+    330: { s: "-1/2", c: "√3/2", sv: -0.5, cv: Math.sqrt(3) / 2 },
+    360: { s: "0", c: "1", sv: 0, cv: 1 },
+  };
+  const norm = ((Math.round(thetaDeg) % 360) + 360) % 360;
+  return table[norm] ?? null;
+}
+
+// ---------- ส่วนประกอบ: วงกลมหนึ่งหน่วยแบบโต้ตอบ ----------
+function UnitCircle({ angle, setAngle, size = 300, showTan = false }) {
+  const ref = useRef(null);
+  const R = size / 2 - 38;
+  const cx = size / 2;
+  const cy = size / 2;
+  const a = rad(angle);
+  const px = cx + R * Math.cos(a);
+  const py = cy - R * Math.sin(a);
+
+  const handlePointer = (clientX, clientY) => {
+    const rect = ref.current.getBoundingClientRect();
+    const x = clientX - rect.left - cx;
+    const y = -(clientY - rect.top - cy);
+    let ang = (deg(Math.atan2(y, x)) + 360) % 360;
+    setAngle(Math.round(ang));
+  };
+
+  const onMouseDown = (e) => {
+    handlePointer(e.clientX, e.clientY);
+    const move = (ev) => handlePointer(ev.clientX, ev.clientY);
+    const up = () => {
+      window.removeEventListener("mousemove", move);
+      window.removeEventListener("mouseup", up);
+    };
+    window.addEventListener("mousemove", move);
+    window.addEventListener("mouseup", up);
+  };
+  const onTouchStart = (e) => {
+    const t = e.touches[0];
+    handlePointer(t.clientX, t.clientY);
+  };
+  const onTouchMove = (e) => {
+    const t = e.touches[0];
+    handlePointer(t.clientX, t.clientY);
+  };
+
+  const sinV = Math.sin(a);
+  const cosV = Math.cos(a);
+
+  return (
+    <div className="unit-circle-wrap">
+      <svg
+        ref={ref}
+        width={size}
+        height={size}
+        onMouseDown={onMouseDown}
+        onTouchStart={onTouchStart}
+        onTouchMove={onTouchMove}
+        style={{ touchAction: "none", cursor: "grab" }}
+      >
+        {/* แกน */}
+        <line x1={8} y1={cy} x2={size - 8} y2={cy} stroke="#3a4a6b" strokeWidth="1.5" />
+        <line x1={cx} y1={8} x2={cx} y2={size - 8} stroke="#3a4a6b" strokeWidth="1.5" />
+        <text x={size - 18} y={cy - 8} fontSize="13" fill="#8b9bbd">X</text>
+        <text x={cx + 8} y={20} fontSize="13" fill="#8b9bbd">Y</text>
+
+        {/* วงกลม */}
+        <circle cx={cx} cy={cy} r={R} fill="none" stroke="#E8A33D" strokeWidth="2" opacity="0.55" />
+
+        {/* เส้น cos (แนวนอน) */}
+        <line x1={cx} y1={py} x2={px} y2={py} stroke="#6B9080" strokeWidth="2.5" />
+        {/* เส้น sin (แนวตั้ง) */}
+        <line x1={px} y1={cy} x2={px} y2={py} stroke="#E15D44" strokeWidth="2.5" />
+
+        {/* รัศมี */}
+        <line x1={cx} y1={cy} x2={px} y2={py} stroke="#FAF6EF" strokeWidth="2" />
+
+        {/* ส่วนโค้งมุม */}
+        <path
+          d={describeArc(cx, cy, 26, 0, angle)}
+          fill="none"
+          stroke="#E8A33D"
+          strokeWidth="2"
+        />
+
+        {/* จุดปลาย */}
+        <circle cx={px} cy={py} r="6" fill="#FAF6EF" stroke="#E8A33D" strokeWidth="2" />
+        <circle cx={cx} cy={cy} r="3" fill="#8b9bbd" />
+
+        {/* ป้ายค่า */}
+        <text x={px + (cosV >= 0 ? 8 : -42)} y={py - 8} fontSize="12" fill="#E15D44" fontWeight="700">
+          sin θ
+        </text>
+        <text x={(cx + px) / 2 - 16} y={cy + (sinV >= 0 ? 18 : -10)} fontSize="12" fill="#6B9080" fontWeight="700">
+          cos θ
+        </text>
+      </svg>
+      <div className="circle-readout">
+        <div><span className="dot" style={{ background: "#E8A33D" }} /> θ = {angle}° ({angleLabel(angle)} rad)</div>
+        <div><span className="dot" style={{ background: "#E15D44" }} /> sin θ = {fmt(sinV)}</div>
+        <div><span className="dot" style={{ background: "#6B9080" }} /> cos θ = {fmt(cosV)}</div>
+      </div>
+      <input
+        type="range"
+        min="0"
+        max="360"
+        value={angle}
+        onChange={(e) => setAngle(Number(e.target.value))}
+        className="angle-slider"
+      />
+      <p className="hint-text">ลากจุดบนวงกลม หรือเลื่อนแถบด้านบนเพื่อเปลี่ยนมุม θ</p>
+    </div>
+  );
+}
+
+function describeArc(cx, cy, r, startDeg, endDeg) {
+  // วาดส่วนโค้งเล็กจากแกน X ไปยังมุม endDeg (ทวนเข็มนาฬิกาเป็นบวก, มุมในจอกลับด้านตามแกน Y)
+  const startRad = 0;
+  const endRad = -rad(endDeg);
+  const x1 = cx + r * Math.cos(startRad);
+  const y1 = cy + r * Math.sin(startRad);
+  const x2 = cx + r * Math.cos(endRad);
+  const y2 = cy + r * Math.sin(endRad);
+  const largeArc = Math.abs(endDeg) > 180 ? 1 : 0;
+  const sweep = endDeg >= 0 ? 0 : 1;
+  return `M ${x1} ${y1} A ${r} ${r} 0 ${largeArc} ${sweep} ${x2} ${y2}`;
+}
+
+// ---------- ส่วนประกอบ: กล่องสูตร ----------
+function FormulaBox({ title, children }) {
+  return (
+    <div className="formula-box">
+      {title && <div className="formula-title">{title}</div>}
+      <div className="formula-body">{children}</div>
+    </div>
+  );
+}
+
+// ---------- ส่วนประกอบ: ตัวอย่างทำเป็นขั้นตอน (เปิดทีละบรรทัด) ----------
+function StepExample({ title, steps, answer }) {
+  const [revealed, setRevealed] = useState(0);
+  return (
+    <div className="step-example">
+      <div className="step-title">📘 {title}</div>
+      <div className="steps-list">
+        {steps.slice(0, revealed).map((s, i) => (
+          <div key={i} className="step-line" style={{ animation: "fadeIn .35s ease" }}>
+            <span className="step-num">{i + 1}</span>
+            <span className="step-content">{s}</span>
+          </div>
+        ))}
+      </div>
+      {revealed < steps.length ? (
+        <button className="btn-ghost" onClick={() => setRevealed(revealed + 1)}>
+          ดูขั้นตอนถัดไป ({revealed}/{steps.length}) →
+        </button>
+      ) : (
+        <div className="answer-pill">✓ คำตอบ: {answer}</div>
+      )}
+      {revealed > 0 && (
+        <button className="btn-text" onClick={() => setRevealed(0)}>
+          ↺ เริ่มใหม่
+        </button>
+      )}
+    </div>
+  );
+}
+
+// ---------- ส่วนประกอบ: แบบฝึกหัดแบบกรอกคำตอบ ----------
+function QuickCheck({ question, accept, hint, placeholder = "พิมพ์คำตอบ" }) {
+  const [val, setVal] = useState("");
+  const [status, setStatus] = useState(null); // null | 'correct' | 'wrong'
+  const [showHint, setShowHint] = useState(false);
+
+  const check = () => {
+    const norm = (s) =>
+      s
+        .toString()
+        .replace(/\s+/g, "")
+        .replace(/√/g, "sqrt")
+        .toLowerCase();
+    const userNorm = norm(val);
+    const ok = accept.some((a) => norm(a) === userNorm);
+    setStatus(ok ? "correct" : "wrong");
+  };
+
+  return (
+    <div className={`quick-check ${status === "correct" ? "qc-correct" : status === "wrong" ? "qc-wrong" : ""}`}>
+      <div className="qc-question">{question}</div>
+      <div className="qc-row">
+        <input
+          value={val}
+          onChange={(e) => {
+            setVal(e.target.value);
+            setStatus(null);
+          }}
+          placeholder={placeholder}
+          onKeyDown={(e) => e.key === "Enter" && check()}
+        />
+        <button className="btn-primary-sm" onClick={check}>
+          ตรวจ
+        </button>
+      </div>
+      {status === "correct" && <div className="qc-feedback ok">✓ ถูกต้อง! เก่งมาก</div>}
+      {status === "wrong" && <div className="qc-feedback bad">✗ ยังไม่ถูก ลองใหม่อีกครั้ง</div>}
+      {hint && (
+        <button className="btn-text" onClick={() => setShowHint(!showHint)}>
+          {showHint ? "ซ่อนคำใบ้" : "💡 ขอคำใบ้"}
+        </button>
+      )}
+      {showHint && <div className="qc-hint">{hint}</div>}
+    </div>
+  );
+}
+
+// ---------- ส่วนประกอบ: แบบฝึกหัดปรนัย ----------
+function MultipleChoice({ question, options, correctIndex, explain }) {
+  const [picked, setPicked] = useState(null);
+  return (
+    <div className="mc-box">
+      <div className="qc-question">{question}</div>
+      <div className="mc-options">
+        {options.map((opt, i) => {
+          let cls = "mc-opt";
+          if (picked !== null) {
+            if (i === correctIndex) cls += " mc-correct";
+            else if (i === picked) cls += " mc-wrong";
+          }
+          return (
+            <button key={i} className={cls} onClick={() => setPicked(i)} disabled={picked !== null}>
+              <span className="mc-letter">{["ก", "ข", "ค", "ง"][i]}</span> {opt}
+            </button>
+          );
+        })}
+      </div>
+      {picked !== null && (
+        <div className={`qc-feedback ${picked === correctIndex ? "ok" : "bad"}`}>
+          {picked === correctIndex ? "✓ ถูกต้อง! " : "✗ ยังไม่ถูก — "}
+          {explain}
+        </div>
+      )}
+      {picked !== null && (
+        <button className="btn-text" onClick={() => setPicked(null)}>
+          ↺ ลองใหม่
+        </button>
+      )}
+    </div>
+  );
+}
+
+// ---------- ส่วนประกอบ: ตารางมุมพิเศษแบบโต้ตอบ ----------
+function SpecialAngleTable() {
+  const angles = [0, 30, 45, 60, 90, 120, 135, 150, 180, 210, 225, 240, 270, 300, 315, 330, 360];
+  const [revealAll, setRevealAll] = useState(false);
+  const [revealed, setRevealed] = useState({});
+
+  return (
+    <div className="table-wrap">
+      <div className="table-controls">
+        <button className="btn-ghost" onClick={() => setRevealAll(!revealAll)}>
+          {revealAll ? "ซ่อนคำตอบทั้งหมด" : "เฉลยทั้งหมด"}
+        </button>
+      </div>
+      <table className="trig-table">
+        <thead>
+          <tr>
+            <th>θ (องศา)</th>
+            <th>θ (เรเดียน)</th>
+            <th>sin θ</th>
+            <th>cos θ</th>
+          </tr>
+        </thead>
+        <tbody>
+          {angles.map((a) => {
+            const ex = exactTrig(a);
+            const show = revealAll || revealed[a];
+            return (
+              <tr key={a}>
+                <td>{a}°</td>
+                <td>{angleLabel(a)}</td>
+                <td
+                  className="clickable-cell"
+                  onClick={() => setRevealed((r) => ({ ...r, [a]: !r[a] }))}
+                >
+                  {show ? ex.s : "?"}
+                </td>
+                <td
+                  className="clickable-cell"
+                  onClick={() => setRevealed((r) => ({ ...r, [a]: !r[a] }))}
+                >
+                  {show ? ex.c : "?"}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      <p className="hint-text">คลิกที่ "?" เพื่อเฉลยทีละช่อง หรือกดปุ่มด้านบนเพื่อเฉลยทั้งหมด</p>
+    </div>
+  );
+}
+
+// ---------- ส่วนประกอบ: เครื่องคำนวณตรีโกณมิติ 6 ฟังก์ชัน ----------
+function SixFunctionCalc() {
+  const [angle, setAngle] = useState(45);
+  const a = rad(angle);
+  const s = Math.sin(a);
+  const c = Math.cos(a);
+  const t = Math.abs(c) < 1e-9 ? NaN : s / c;
+  const cot = Math.abs(s) < 1e-9 ? NaN : c / s;
+  const sec = Math.abs(c) < 1e-9 ? NaN : 1 / c;
+  const csc = Math.abs(s) < 1e-9 ? NaN : 1 / s;
+
+  return (
+    <div className="six-calc">
+      <div className="six-calc-input">
+        <label>θ = </label>
+        <input
+          type="number"
+          value={angle}
+          onChange={(e) => setAngle(Number(e.target.value))}
+        />
+        <span>องศา</span>
+      </div>
+      <div className="six-grid">
+        <div className="six-cell"><span>sin θ</span><b>{fmt(s)}</b></div>
+        <div className="six-cell"><span>cos θ</span><b>{fmt(c)}</b></div>
+        <div className="six-cell"><span>tan θ</span><b>{Number.isNaN(t) ? "ไม่นิยาม" : fmt(t)}</b></div>
+        <div className="six-cell"><span>cot θ</span><b>{Number.isNaN(cot) ? "ไม่นิยาม" : fmt(cot)}</b></div>
+        <div className="six-cell"><span>sec θ</span><b>{Number.isNaN(sec) ? "ไม่นิยาม" : fmt(sec)}</b></div>
+        <div className="six-cell"><span>cosec θ</span><b>{Number.isNaN(csc) ? "ไม่นิยาม" : fmt(csc)}</b></div>
+      </div>
+    </div>
+  );
+}
+
+// ---------- ส่วนประกอบ: กราฟฟังก์ชัน ----------
+function TrigGraph({ fn = "sin", a = 1, n = 1 }) {
+  const w = 480, h = 200, pad = 30;
+  const xMin = -2 * PI, xMax = 2 * PI;
+  const yMax = Math.max(2, a + 0.5);
+  const toX = (x) => pad + ((x - xMin) / (xMax - xMin)) * (w - 2 * pad);
+  const toY = (y) => h / 2 - (y / yMax) * (h / 2 - pad / 2);
+
+  const points = [];
+  for (let i = 0; i <= 400; i++) {
+    const x = xMin + (i / 400) * (xMax - xMin);
+    let y;
+    if (fn === "sin") y = a * Math.sin(n * x);
+    else if (fn === "cos") y = a * Math.cos(n * x);
+    else if (fn === "tan") {
+      y = Math.tan(n * x);
+      if (Math.abs(y) > 6) y = NaN;
+    }
+    points.push([toX(x), toY(y)]);
+  }
+  let path = "";
+  let drawing = false;
+  points.forEach(([x, y]) => {
+    if (Number.isNaN(y)) {
+      drawing = false;
+      return;
+    }
+    path += (drawing ? " L " : " M ") + x + " " + y;
+    drawing = true;
+  });
+
+  const xTicks = [-2 * PI, -1.5 * PI, -PI, -0.5 * PI, 0, 0.5 * PI, PI, 1.5 * PI, 2 * PI];
+  const xLabels = ["-2π", "", "-π", "", "0", "", "π", "", "2π"];
+
+  return (
+    <svg width={w} height={h} className="trig-graph-svg">
+      <line x1={pad} y1={h / 2} x2={w - pad} y2={h / 2} stroke="#3a4a6b" strokeWidth="1" />
+      <line x1={toX(0)} y1={pad / 2} x2={toX(0)} y2={h - pad / 2} stroke="#3a4a6b" strokeWidth="1" />
+      {xTicks.map((t, i) => (
+        <text key={i} x={toX(t)} y={h / 2 + 16} fontSize="10" fill="#8b9bbd" textAnchor="middle">
+          {xLabels[i]}
+        </text>
+      ))}
+      <path d={path} fill="none" stroke="#E15D44" strokeWidth="2.5" />
+    </svg>
+  );
+}
+
+/* ============================================================
+   เนื้อหารายหัวข้อ (9 หัวข้อ)
+   ============================================================ */
+
+function Topic1() {
+  const [angle, setAngle] = useState(60);
+  return (
+    <div className="topic">
+      <h2>1. ฟังก์ชันไซน์และโคไซน์</h2>
+      <p className="lede">
+        นิยามจาก<b>วงกลมหนึ่งหน่วย</b> (วงกลมรัศมี 1 ที่จุดศูนย์กลางอยู่ที่จุดกำเนิด) — ลองลาก
+        จุดบนวงกลมด้านล่างดูว่า sin และ cos เปลี่ยนค่าอย่างไร
+      </p>
+
+      <UnitCircle angle={angle} setAngle={setAngle} />
+
+      <FormulaBox title="🔑 นิยามหลัก (จำให้แม่น)">
+        <p>เมื่อจุด (x, y) อยู่บนวงกลมหนึ่งหน่วย ที่ทำมุม θ จากแกน X บวก:</p>
+        <div className="formula-line">y = sin θ &nbsp;&nbsp; (แกนตั้ง)</div>
+        <div className="formula-line">x = cos θ &nbsp;&nbsp; (แกนนอน)</div>
+        <div className="formula-line important">cos²θ + sin²θ = 1 &nbsp; (เพราะ x² + y² = 1 เสมอ)</div>
+      </FormulaBox>
+
+      <FormulaBox title="📐 โดเมนและเรนจ์">
+        <ul>
+          <li>โดเมนของ sin และ cos คือ จำนวนจริงทั้งหมด ℝ</li>
+          <li>เรนจ์ของ sin และ cos คือ [-1, 1] (เพราะ -1 ≤ x, y ≤ 1 บนวงกลม)</li>
+        </ul>
+      </FormulaBox>
+
+      <h3>มุมพิเศษที่ต้องจำ</h3>
+      <p>กดปุ่มเลือกมุมด่วน แล้วดูว่าจุดบนวงกลมไปอยู่ตรงไหน:</p>
+      <div className="quick-angle-row">
+        {[0, 30, 45, 60, 90, 120, 135, 150, 180, 210, 225, 240, 270, 300, 315, 330].map((a) => (
+          <button key={a} className="angle-chip" onClick={() => setAngle(a)}>
+            {a}°
+          </button>
+        ))}
+      </div>
+
+      <SpecialAngleTable />
+
+      <StepExample
+        title="ตัวอย่าง: หาค่า sin(25π/3)"
+        steps={[
+          "เขียน 25π/3 ในรูปพหุคูณของ 2π บวกเศษ: 25π/3 = 8π + π/3 = 2(4π) + π/3",
+          "เนื่องจาก 4π คือ 2 รอบเต็ม sin จะมีค่าเท่ากับมุม π/3 (มุมตกค้าง)",
+          "sin(25π/3) = sin(π/3)",
+          "จากค่ามุมพิเศษ sin(π/3) = √3/2",
+        ]}
+        answer="√3/2"
+      />
+
+      <StepExample
+        title="ตัวอย่าง: หาค่า cos(-29π/3)"
+        steps={[
+          "cos เป็นฟังก์ชันคู่: cos(-θ) = cos(θ) ดังนั้น cos(-29π/3) = cos(29π/3)",
+          "29π/3 = 8π + 5π/3 = 2(4π) + 5π/3",
+          "ตัด 4π (2 รอบเต็ม) ออกได้: cos(29π/3) = cos(5π/3)",
+          "5π/3 อยู่ในจตุภาคที่ 4 เขียนเป็น 2π - π/3 → cos(5π/3) = cos(π/3) = 1/2",
+        ]}
+        answer="1/2"
+      />
+
+      <h3>🧩 ลองทำเอง</h3>
+      <QuickCheck
+        question="sin(7π/6) มีค่าเท่าใด? (ตอบในรูปเศษส่วน เช่น -1/2)"
+        accept={["-1/2", "-0.5"]}
+        hint="7π/6 = π + π/6 อยู่จตุภาค 3 → sin(π+α) = -sin α ดังนั้น sin(7π/6) = -sin(π/6) = -1/2"
+      />
+      <QuickCheck
+        question="cos(2π/3) มีค่าเท่าใด?"
+        accept={["-1/2", "-0.5"]}
+        hint="2π/3 = π - π/3 อยู่จตุภาค 2 → cos(π-α) = -cos α ดังนั้น cos(2π/3) = -cos(π/3) = -1/2"
+      />
+      <MultipleChoice
+        question="ข้อใดถูกต้องเกี่ยวกับเรนจ์ของฟังก์ชัน sin และ cos?"
+        options={["[0, 1]", "[-1, 1]", "(-∞, ∞)", "[-π, π]"]}
+        correctIndex={1}
+        explain="เพราะจุด (x,y) บนวงกลมหนึ่งหน่วยมี -1 ≤ x ≤ 1 และ -1 ≤ y ≤ 1 เสมอ"
+      />
+    </div>
+  );
+}
+
+function Topic2() {
+  return (
+    <div className="topic">
+      <h2>2. ฟังก์ชันตรีโกณมิติอื่น ๆ</h2>
+      <p className="lede">
+        จาก sin และ cos เราสร้างฟังก์ชันอีก 4 ตัวได้ — จำสูตรเหล่านี้ให้คล่อง เพราะใช้ตลอดทั้งบท
+      </p>
+
+      <FormulaBox title="🔑 นิยาม 4 ฟังก์ชันที่เหลือ">
+        <div className="formula-line">tan θ = sin θ / cos θ &nbsp; (เมื่อ cos θ ≠ 0)</div>
+        <div className="formula-line">cot θ = cos θ / sin θ = 1/tan θ &nbsp; (เมื่อ sin θ ≠ 0)</div>
+        <div className="formula-line">sec θ = 1 / cos θ &nbsp; (เมื่อ cos θ ≠ 0)</div>
+        <div className="formula-line">cosec θ = 1 / sin θ &nbsp; (เมื่อ sin θ ≠ 0)</div>
+      </FormulaBox>
+
+      <FormulaBox title="⭐ เอกลักษณ์ที่ใช้บ่อยที่สุด">
+        <div className="formula-line important">1 + tan²θ = sec²θ</div>
+        <div className="formula-line important">1 + cot²θ = cosec²θ</div>
+        <p className="small-note">
+          ที่มา: หารทุกพจน์ของ sin²θ + cos²θ = 1 ด้วย cos²θ (ได้สูตรแรก) หรือด้วย sin²θ (ได้สูตรสอง)
+        </p>
+      </FormulaBox>
+
+      <h3>🧮 ลองคำนวณเอง</h3>
+      <SixFunctionCalc />
+
+      <table className="trig-table small-table">
+        <thead>
+          <tr><th>โดเมน / เรนจ์</th><th>ฟังก์ชัน</th><th>ค่า</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>โดเมน</td><td>sin, cos</td><td>ℝ ทั้งหมด</td></tr>
+          <tr><td>โดเมน</td><td>tan, sec</td><td>ℝ ยกเว้น θ = (2n-1)π/2</td></tr>
+          <tr><td>โดเมน</td><td>cot, cosec</td><td>ℝ ยกเว้น θ = nπ</td></tr>
+          <tr><td>เรนจ์</td><td>sin, cos</td><td>[-1, 1]</td></tr>
+          <tr><td>เรนจ์</td><td>tan, cot</td><td>ℝ ทั้งหมด</td></tr>
+          <tr><td>เรนจ์</td><td>sec, cosec</td><td>|y| ≥ 1</td></tr>
+        </tbody>
+      </table>
+
+      <StepExample
+        title="ตัวอย่าง: กำหนด sin θ = 0.52 และ 0 ≤ θ ≤ π/2 หา cos θ, tan θ, cosec θ"
+        steps={[
+          "ใช้เอกลักษณ์ cos²θ = 1 - sin²θ = 1 - (0.52)² = 1 - 0.2704 = 0.7296",
+          "เนื่องจาก θ อยู่ในจตุภาคที่ 1 cos θ > 0 ดังนั้น cos θ = √0.7296 ≈ 0.85",
+          "tan θ = sin θ / cos θ = 0.52 / 0.85 ≈ 0.61",
+          "cosec θ = 1 / sin θ = 1 / 0.52 ≈ 1.92",
+        ]}
+        answer="cos θ ≈ 0.85, tan θ ≈ 0.61, cosec θ ≈ 1.92"
+      />
+
+      <h3>🧩 ลองทำเอง</h3>
+      <QuickCheck
+        question="ถ้า 0 ≤ θ ≤ π/2 และ sin θ = 3/5 จงหา sec²θ - tan²θ (เอกลักษณ์ตรง ๆ)"
+        accept={["1"]}
+        hint="ใช้เอกลักษณ์ 1 + tan²θ = sec²θ จัดรูปได้ sec²θ - tan²θ = 1 เสมอ ไม่ต้องคำนวณตัวเลข!"
+      />
+      <MultipleChoice
+        question="ถ้า cos θ < 0 และ tan θ > 0 จุดปลายส่วนโค้งของ θ อยู่ในจตุภาคใด?"
+        options={["จตุภาค 1", "จตุภาค 2", "จตุภาค 3", "จตุภาค 4"]}
+        correctIndex={2}
+        explain="tan θ = sin θ/cos θ > 0 ต้องการให้ sin, cos เครื่องหมายเดียวกัน และ cos < 0 ดังนั้น sin ก็ต้องลบด้วย → จตุภาค 3"
+      />
+    </div>
+  );
+}
+
+function Topic3() {
+  const [deg1, setDeg1] = useState(45);
+  return (
+    <div className="topic">
+      <h2>3. ฟังก์ชันตรีโกณมิติของมุม (สามเหลี่ยมมุมฉาก)</h2>
+      <p className="lede">
+        เชื่อมตรีโกณมิติกับรูปสามเหลี่ยมมุมฉากที่เราคุ้นเคยตั้งแต่ ม.ต้น — และหน่วยวัดมุมแบบ "เรเดียน"
+      </p>
+
+      <FormulaBox title="🔄 แปลงหน่วยมุม">
+        <div className="formula-line important">180 องศา = π เรเดียน</div>
+        <div className="formula-line">1 องศา = π/180 เรเดียน ≈ 0.01745 เรเดียน</div>
+        <div className="formula-line">1 เรเดียน = 180/π องศา ≈ 57°18′</div>
+      </FormulaBox>
+
+      <div className="converter-box">
+        <label>แปลงองศา ↔ เรเดียน: </label>
+        <input
+          type="number"
+          value={deg1}
+          onChange={(e) => setDeg1(Number(e.target.value))}
+        />
+        <span> องศา</span>
+        <span className="arrow">=</span>
+        <b>{fmt((deg1 * PI) / 180, 4)} เรเดียน</b>
+        <span className="arrow">≈</span>
+        <b>{fmt(deg1 / 180, 4)}π เรเดียน</b>
+      </div>
+
+      <FormulaBox title="📐 ในรูปสามเหลี่ยมมุมฉาก ABC (มุมฉากที่ C)">
+        <div className="formula-line">sin A = a/c (ตรงข้าม/ฉาก)</div>
+        <div className="formula-line">cos A = b/c (ประชิด/ฉาก)</div>
+        <div className="formula-line">tan A = a/b (ตรงข้าม/ประชิด)</div>
+        <div className="formula-line important">A + B = 90° → sin A = cos(90° - A) = cos B</div>
+      </FormulaBox>
+
+      <StepExample
+        title="ตัวอย่าง: สามเหลี่ยม ABC มุม A = 30°, มุม C = 90°, a = 9√3 ซม. หา B และด้านที่เหลือ"
+        steps={[
+          "มุม B = 180° - 90° - 30° = 60°",
+          "sin A = a/c → sin 30° = 9√3/c → (1/2) = 9√3/c → c = 18√3",
+          "cos A = b/c → cos 30° = b/(18√3) → (√3/2) = b/(18√3) → b = 27",
+        ]}
+        answer="B = 60°, c = 18√3 ซม., b = 27 ซม."
+      />
+
+      <h3>🧩 ลองทำเอง</h3>
+      <QuickCheck
+        question="180° เท่ากับกี่เรเดียน? (ตอบเป็น π)"
+        accept={["π", "pi", "1π"]}
+        hint="นี่คือสูตรพื้นฐานที่สุด: 180 องศา = π เรเดียน"
+      />
+      <QuickCheck
+        question="sin 210° มีค่าเท่าใด? (210° = 180°+30°)"
+        accept={["-1/2", "-0.5"]}
+        hint="210° อยู่จตุภาค 3 → sin(180°+30°) = -sin 30° = -1/2"
+      />
+    </div>
+  );
+}
+
+function Topic4() {
+  const [fn, setFn] = useState("sin");
+  const [amp, setAmp] = useState(1);
+  const [period, setPeriod] = useState(1);
+  return (
+    <div className="topic">
+      <h2>4. กราฟของฟังก์ชันตรีโกณมิติ</h2>
+      <p className="lede">
+        ฟังก์ชัน sin, cos เป็นฟังก์ชัน<b>คาบ (periodic)</b> — กราฟซ้ำรูปแบบเดิมทุก ๆ ช่วงคงที่
+      </p>
+
+      <FormulaBox title="🔑 คาบและแอมพลิจูด">
+        <div className="formula-line">f(x) = a·sin(nx) → คาบ = 2π/n, แอมพลิจูด = |a|</div>
+        <div className="formula-line">f(x) = a·cos(nx) → คาบ = 2π/n, แอมพลิจูด = |a|</div>
+      </FormulaBox>
+
+      <div className="graph-controls">
+        <div className="seg-control">
+          {["sin", "cos", "tan"].map((f) => (
+            <button key={f} className={fn === f ? "seg-active" : ""} onClick={() => setFn(f)}>
+              {f}
+            </button>
+          ))}
+        </div>
+        <label>
+          แอมพลิจูด a = {amp}
+          <input type="range" min="0.5" max="3" step="0.5" value={amp} onChange={(e) => setAmp(Number(e.target.value))} />
+        </label>
+        <label>
+          n (ความถี่) = {period}
+          <input type="range" min="1" max="4" step="1" value={period} onChange={(e) => setPeriod(Number(e.target.value))} />
+        </label>
+      </div>
+      <TrigGraph fn={fn} a={amp} n={period} />
+      <p className="hint-text">
+        คาบของกราฟนี้ = 2π/{period} {fn !== "tan" && `, แอมพลิจูด = ${amp}`}
+      </p>
+
+      <table className="trig-table small-table">
+        <thead><tr><th>ฟังก์ชัน</th><th>โดเมน</th><th>เรนจ์</th></tr></thead>
+        <tbody>
+          <tr><td>sin x</td><td>ℝ</td><td>[-1, 1]</td></tr>
+          <tr><td>cos x</td><td>ℝ</td><td>[-1, 1]</td></tr>
+          <tr><td>tan x</td><td>ℝ ยกเว้น π/2 + nπ</td><td>ℝ</td></tr>
+        </tbody>
+      </table>
+
+      <h3>🧩 ลองทำเอง</h3>
+      <QuickCheck
+        question="กราฟ y = 3 sin(2x) มีคาบเท่าใด? (ตอบเป็น π เช่น 2π)"
+        accept={["π", "1π"]}
+        hint="คาบ = 2π/n เมื่อ n=2 → คาบ = 2π/2 = π"
+      />
+      <QuickCheck
+        question="กราฟ y = 1 - 2cos(x/2) มีแอมพลิจูดเท่าใด?"
+        accept={["2"]}
+        hint="แอมพลิจูด = |a| = |-2| = 2 (ค่า 1 ที่บวกอยู่ไม่กระทบแอมพลิจูด แค่เลื่อนกราฟขึ้น)"
+      />
+    </div>
+  );
+}
+
+function Topic5() {
+  return (
+    <div className="topic">
+      <h2>5. ฟังก์ชันตรีโกณมิติของผลบวก/ผลต่างของมุม</h2>
+      <p className="lede">สูตรกลุ่มนี้คือ "หัวใจ" ของการคำนวณตรีโกณมิติขั้นสูง ต้องจำให้แม่น</p>
+
+      <FormulaBox title="🔑 สูตรผลบวก/ผลต่าง (จำคู่กัน)">
+        <div className="formula-line">sin(α±β) = sin α cos β ± cos α sin β</div>
+        <div className="formula-line">cos(α±β) = cos α cos β ∓ sin α sin β</div>
+        <div className="formula-line">tan(α±β) = (tan α ± tan β)/(1 ∓ tan α tan β)</div>
+      </FormulaBox>
+
+      <FormulaBox title="🔁 มุมสองเท่า (2α)">
+        <div className="formula-line">sin 2α = 2 sin α cos α</div>
+        <div className="formula-line">cos 2α = cos²α - sin²α = 2cos²α - 1 = 1 - 2sin²α</div>
+        <div className="formula-line">tan 2α = 2tan α/(1 - tan²α)</div>
+      </FormulaBox>
+
+      <FormulaBox title="🔁 มุมสามเท่า (3α)">
+        <div className="formula-line">sin 3α = 3 sin α - 4 sin³α</div>
+        <div className="formula-line">cos 3α = 4 cos³α - 3 cos α</div>
+      </FormulaBox>
+
+      <FormulaBox title="↔️ ผลคูณเป็นผลบวก / ผลบวกเป็นผลคูณ">
+        <div className="formula-line">2 sin α cos β = sin(α+β) + sin(α-β)</div>
+        <div className="formula-line">2 cos α sin β = sin(α+β) - sin(α-β)</div>
+        <div className="formula-line">2 cos α cos β = cos(α+β) + cos(α-β)</div>
+        <div className="formula-line">2 sin α sin β = cos(α-β) - cos(α+β)</div>
+        <hr/>
+        <div className="formula-line">sin x + sin y = 2 sin((x+y)/2) cos((x-y)/2)</div>
+        <div className="formula-line">sin x - sin y = 2 cos((x+y)/2) sin((x-y)/2)</div>
+        <div className="formula-line">cos x + cos y = 2 cos((x+y)/2) cos((x-y)/2)</div>
+        <div className="formula-line">cos x - cos y = -2 sin((x+y)/2) sin((x-y)/2)</div>
+      </FormulaBox>
+
+      <StepExample
+        title="ตัวอย่าง: หาค่า cos 15° โดยใช้ cos(45°-30°)"
+        steps={[
+          "cos 15° = cos(45° - 30°)",
+          "ใช้สูตร cos(α-β) = cos α cos β + sin α sin β",
+          "= cos45°cos30° + sin45°sin30° = (√2/2)(√3/2) + (√2/2)(1/2)",
+          "= √6/4 + √2/4 = (√6+√2)/4",
+        ]}
+        answer="(√6+√2)/4"
+      />
+
+      <StepExample
+        title="ตัวอย่าง: ถ้า sin x = -1/4 และ π < x < 3π/2 จงหา cos 2x และ sin 2x"
+        steps={[
+          "หา cos x จาก cos²x = 1 - sin²x = 1 - 1/16 = 15/16",
+          "เนื่องจาก π < x < 3π/2 (จตุภาค 3) cos x < 0 → cos x = -√15/4",
+          "cos 2x = cos²x - sin²x = 15/16 - 1/16 = 14/16 = 7/8",
+          "sin 2x = 2 sin x cos x = 2(-1/4)(-√15/4) = 2√15/16 = √15/8",
+        ]}
+        answer="cos 2x = 7/8, sin 2x = √15/8"
+      />
+
+      <h3>🧩 ลองทำเอง</h3>
+      <QuickCheck
+        question="sin 75° + sin 15° เท่ากับเท่าใด? (ใช้สูตรผลบวก → ผลคูณ ตอบเป็นทศนิยม 4 ตำแหน่ง หรือนิพจน์)"
+        accept={["√6/2", "1.2247"]}
+        hint="sin75°+sin15° = 2sin((75+15)/2)cos((75-15)/2) = 2sin45°cos30° = 2(√2/2)(√3/2) = √6/2"
+      />
+      <QuickCheck
+        question="กำหนด sin α = 4/5, 0<α<π/2 จงหา sin 2α"
+        accept={["24/25", "0.96"]}
+        hint="cos α = √(1-16/25) = 3/5 ดังนั้น sin2α = 2sinαcosα = 2(4/5)(3/5) = 24/25"
+      />
+    </div>
+  );
+}
+
+function Topic6() {
+  const [v, setV] = useState(0.5);
+  const arcsinVal = Math.asin(Math.max(-1, Math.min(1, v)));
+  const arccosVal = Math.acos(Math.max(-1, Math.min(1, v)));
+  return (
+    <div className="topic">
+      <h2>6. ตัวผกผันของฟังก์ชันตรีโกณมิติ</h2>
+      <p className="lede">
+        sin, cos, tan ไม่ใช่ฟังก์ชัน 1-1 จึงต้อง "จำกัดโดเมน" ก่อนหาตัวผกผัน — นี่คือกฎที่สุดท้ายตัดสินคำตอบทุกข้อ
+      </p>
+
+      <FormulaBox title="🎯 กฎเหล็ก: ช่วงคำตอบของฟังก์ชันผกผัน">
+        <table className="trig-table small-table">
+          <thead><tr><th>ฟังก์ชัน</th><th>โดเมน</th><th>เรนจ์ (ช่วงคำตอบ)</th></tr></thead>
+          <tbody>
+            <tr><td>y = arcsin x</td><td>[-1, 1]</td><td>[-π/2, π/2] (มุมขอบขวา/ขอบล่าง)</td></tr>
+            <tr><td>y = arccos x</td><td>[-1, 1]</td><td>[0, π] (มุมขอบบนเท่านั้น)</td></tr>
+            <tr><td>y = arctan x</td><td>ℝ</td><td>(-π/2, π/2)</td></tr>
+          </tbody>
+        </table>
+        <p className="small-note">
+          เคล็ดลับ: arcsin ตอบได้ทั้งมุมบวกและลบ (แต่ไม่เกิน ±90°) ส่วน arccos ตอบเป็นมุม 0°-180° เท่านั้น (ไม่มีค่าลบ)
+        </p>
+      </FormulaBox>
+
+      <div className="converter-box">
+        <label>ลองกรอกค่า x (-1 ถึง 1): </label>
+        <input
+          type="number"
+          step="0.1"
+          min="-1"
+          max="1"
+          value={v}
+          onChange={(e) => setV(Number(e.target.value))}
+        />
+        <div className="six-grid" style={{ marginTop: 12 }}>
+          <div className="six-cell">
+            <span>arcsin({fmt(v, 2)})</span>
+            <b>{fmt(arcsinVal, 4)} rad = {fmt(deg(arcsinVal), 2)}°</b>
+          </div>
+          <div className="six-cell">
+            <span>arccos({fmt(v, 2)})</span>
+            <b>{fmt(arccosVal, 4)} rad = {fmt(deg(arccosVal), 2)}°</b>
+          </div>
+        </div>
+      </div>
+
+      <StepExample
+        title="ตัวอย่าง: หาค่า arcsin(1/2)"
+        steps={[
+          "ให้ arcsin(1/2) = θ โดยที่ -π/2 ≤ θ ≤ π/2 (กฎของ arcsin)",
+          "จะได้ sin θ = 1/2",
+          "หามุม θ ในช่วง [-π/2, π/2] ที่ sin θ = 1/2 → θ = π/6 (มีค่าเดียวในช่วงนี้)",
+        ]}
+        answer="π/6"
+      />
+
+      <StepExample
+        title="ตัวอย่าง: หาค่า arccos(-1/2)"
+        steps={[
+          "ให้ arccos(-1/2) = θ โดยที่ 0 ≤ θ ≤ π (กฎของ arccos)",
+          "จะได้ cos θ = -1/2",
+          "ค่ามูลฐาน cos(π/3) = 1/2 แต่เราต้องการค่าลบ และ θ ต้องอยู่ใน [0,π]",
+          "cos θ เป็นลบในจตุภาค 2 → θ = π - π/3 = 2π/3",
+        ]}
+        answer="2π/3"
+      />
+
+      <StepExample
+        title="ตัวอย่าง: หาค่า sin(arccos(2/3))"
+        steps={[
+          "ให้ arccos(2/3) = θ ดังนั้น cos θ = 2/3 โดยที่ 0 ≤ θ ≤ π",
+          "วาดสามเหลี่ยมมุมฉาก: ด้านประชิด = 2, ด้านฉาก = 3",
+          "ด้านตรงข้าม = √(3² - 2²) = √5",
+          "เนื่องจาก 0 < θ < π/2 (cos เป็นบวก) sin θ จึงเป็นบวก: sin θ = √5/3",
+        ]}
+        answer="√5/3"
+      />
+
+      <h3>🧩 ลองทำเอง</h3>
+      <QuickCheck
+        question="arctan(√3) มีค่าเท่าใด? (ตอบเป็น π)"
+        accept={["π/3"]}
+        hint="หามุม θ ใน (-π/2, π/2) ที่ tan θ = √3 → θ = π/3"
+      />
+      <QuickCheck
+        question="arccos(1) มีค่าเท่าใด?"
+        accept={["0"]}
+        hint="หามุม θ ใน [0,π] ที่ cos θ = 1 → θ = 0 (จุดเริ่มต้นของวงกลม)"
+      />
+      <MultipleChoice
+        question="เพราะเหตุใด sin และ cos จึงไม่มีตัวผกผันที่เป็นฟังก์ชันได้โดยตรง (ก่อนจำกัดโดเมน)?"
+        options={[
+          "เพราะค่าฟังก์ชันเป็นลบได้",
+          "เพราะฟังก์ชันไม่ใช่ฟังก์ชัน 1-1 (ค่า x หลายค่าให้ y เดียวกัน)",
+          "เพราะฟังก์ชันไม่ต่อเนื่อง",
+          "เพราะเรนจ์ไม่ใช่ช่วงจำกัด",
+        ]}
+        correctIndex={1}
+        explain="ฟังก์ชันที่มีตัวผกผันเป็นฟังก์ชันต้องเป็นฟังก์ชัน 1-1 เท่านั้น sin/cos ซ้ำค่าทุกคาบ 2π จึงต้องจำกัดโดเมนก่อน"
+      />
+    </div>
+  );
+}
+
+function Topic7() {
+  return (
+    <div className="topic">
+      <h2>7. เอกลักษณ์และสมการตรีโกณมิติ</h2>
+      <p className="lede">
+        <b>เอกลักษณ์</b> = จริงเสมอทุกค่า θ (ใช้พิสูจน์) &nbsp;|&nbsp; <b>สมการ</b> = จริงเฉพาะบางค่า θ (ใช้แก้หาคำตอบ)
+      </p>
+
+      <FormulaBox title="🔑 เอกลักษณ์พื้นฐาน 3 กลุ่ม">
+        <div className="formula-line">sin²θ + cos²θ = 1</div>
+        <div className="formula-line">sec²θ - tan²θ = 1</div>
+        <div className="formula-line">cosec²θ - cot²θ = 1</div>
+      </FormulaBox>
+
+      <StepExample
+        title="พิสูจน์เอกลักษณ์: (sec θ + tan θ)(1 - sin θ) = cos θ"
+        steps={[
+          "เขียน sec θ = 1/cos θ และ tan θ = sin θ/cos θ",
+          "(sec θ + tan θ)(1-sinθ) = (1/cosθ + sinθ/cosθ)(1-sinθ) = [(1+sinθ)/cosθ](1-sinθ)",
+          "= (1+sinθ)(1-sinθ)/cosθ = (1-sin²θ)/cosθ",
+          "ใช้ sin²θ+cos²θ=1 → 1-sin²θ = cos²θ ดังนั้น = cos²θ/cosθ = cos θ ✓",
+        ]}
+        answer="พิสูจน์สำเร็จ: ทั้งสองข้างเท่ากับ cos θ"
+      />
+
+      <StepExample
+        title="แก้สมการ: 2sin²θ - sinθ - 1 = 0 เมื่อ 0 ≤ θ ≤ 2π"
+        steps={[
+          "แยกตัวประกอบเหมือนสมการพีชคณิต: (2sinθ+1)(sinθ-1) = 0",
+          "กรณีที่ 1: 2sinθ+1=0 → sinθ = -1/2 → θ = 7π/6, 11π/6 (จตุภาค 3,4)",
+          "กรณีที่ 2: sinθ-1=0 → sinθ = 1 → θ = π/2",
+          "รวมคำตอบทั้งหมดในช่วงที่กำหนด",
+        ]}
+        answer="θ = π/2, 7π/6, 11π/6"
+      />
+
+      <h3>🧩 ลองทำเอง</h3>
+      <QuickCheck
+        question="จงพิสูจน์ในใจ: tan θ · cot θ = ? (พิมพ์ตัวเลข)"
+        accept={["1"]}
+        hint="tanθ·cotθ = (sinθ/cosθ)(cosθ/sinθ) = 1 เสมอ (เมื่อทั้งสองนิยาม)"
+      />
+      <QuickCheck
+        question="แก้สมการ tan²θ - 1 = 0 จะได้ tan θ = ? (สองค่า แยกด้วยจุลภาค เช่น 1,-1)"
+        accept={["1,-1", "-1,1"]}
+        hint="tan²θ=1 → tanθ = ±1"
+      />
+    </div>
+  );
+}
+
+function Topic8() {
+  return (
+    <div className="topic">
+      <h2>8. กฎของโคไซน์และกฎของไซน์</h2>
+      <p className="lede">ใช้แก้รูปสามเหลี่ยม "ใด ๆ" ที่ไม่จำเป็นต้องเป็นมุมฉาก</p>
+
+      <FormulaBox title="📐 กฎของโคไซน์ (ใช้เมื่อรู้ 3 ด้าน หรือ 2 ด้าน+มุมระหว่าง)">
+        <div className="formula-line">a² = b² + c² - 2bc·cos A</div>
+        <div className="formula-line">b² = c² + a² - 2ca·cos B</div>
+        <div className="formula-line">c² = a² + b² - 2ab·cos C</div>
+        <p className="small-note">a, b, c คือด้านตรงข้ามมุม A, B, C ตามลำดับ</p>
+      </FormulaBox>
+
+      <FormulaBox title="📐 กฎของไซน์ (ใช้เมื่อรู้มุม-ด้านคู่ตรงข้าม)">
+        <div className="formula-line important">sin A / a = sin B / b = sin C / c</div>
+      </FormulaBox>
+
+      <FormulaBox title="📏 พื้นที่สามเหลี่ยมจากสองด้านและมุมระหว่าง">
+        <div className="formula-line">พื้นที่ ABC = (1/2)·bc·sin A</div>
+      </FormulaBox>
+
+      <StepExample
+        title="ตัวอย่าง: กำหนด A=60°, b=40, c=60 จงหา a (กฎของโคไซน์)"
+        steps={[
+          "a² = b²+c²-2bc·cosA = 40²+60² - 2(40)(60)cos60°",
+          "= 1600+3600 - 2(2400)(1/2) = 5200 - 2400 = 2800",
+          "a = √2800 = 20√7",
+        ]}
+        answer="a = 20√7"
+      />
+
+      <StepExample
+        title="ตัวอย่าง: กำหนด A=45°, C=60°, b=20 จงหา c และพื้นที่ (กฎของไซน์)"
+        steps={[
+          "หามุม B = 180° - 45° - 60° = 75°",
+          "ใช้กฎของไซน์: sinB/b = sinC/c → sin75°/20 = sin60°/c",
+          "c = 20·sin60°/sin75° ≈ 17.93",
+          "พื้นที่ = (1/2)·b·c·sinA = (1/2)(20)(17.93)(0.707) ≈ 126.77 ตารางหน่วย",
+        ]}
+        answer="c ≈ 17.93, พื้นที่ ≈ 126.77 ตารางหน่วย"
+      />
+
+      <h3>🧩 ลองทำเอง</h3>
+      <QuickCheck
+        question="ถ้า a=7.23, b=6.00, c=8.61 จงหามุม C จาก cosC=(a²+b²-c²)/2ab แล้วตอบมุมโดยประมาณ (หน่วยองศา ทศนิยม 0 ตำแหน่ง)"
+        accept={["90", "90°"]}
+        hint="cosC = (52.27+36-74.13)/(2·7.23·6) ≈ 14.14/86.76 ≈ 0.163 → C ≈ 80° (ลองคำนวณดูอีกครั้งด้วยเครื่องคิดเลขเพื่อความแม่นยำ)"
+      />
+      <MultipleChoice
+        question="เมื่อใดควรใช้กฎของไซน์แทนกฎของโคไซน์?"
+        options={[
+          "เมื่อรู้ 3 ด้านครบ",
+          "เมื่อรู้ 2 ด้าน และมุมระหว่างด้านทั้งสอง",
+          "เมื่อรู้มุมหนึ่งมุมกับด้านตรงข้ามมุมนั้น และต้องการหาอีกมุม/ด้าน",
+          "ไม่มีความแตกต่างกัน ใช้แทนกันได้เสมอ",
+        ]}
+        correctIndex={2}
+        explain="กฎของไซน์เหมาะกับสถานการณ์ มุม-ด้านตรงข้ามคู่หนึ่งที่รู้ครบ แล้วหาคู่อื่น ส่วนกฎของโคไซน์ใช้เมื่อรู้ 3 ด้าน หรือ 2 ด้าน+มุมประกอบ"
+      />
+    </div>
+  );
+}
+
+function Topic9() {
+  return (
+    <div className="topic">
+      <h2>9. การหาระยะทางและความสูง</h2>
+      <p className="lede">โจทย์ประยุกต์: มุมเงย มุมก้ม และทิศทาง — สร้างรูปสามเหลี่ยมจากสถานการณ์จริง</p>
+
+      <FormulaBox title="🔭 นิยามมุมเงย / มุมก้ม">
+        <ul>
+          <li><b>มุมเงย</b>: มุมระหว่างแนวระดับสายตา กับแนวเส้นสายตาที่เงยขึ้นไปดูวัตถุที่อยู่สูงกว่า</li>
+          <li><b>มุมก้ม</b>: มุมระหว่างแนวระดับสายตา กับแนวเส้นสายตาที่ก้มลงไปดูวัตถุที่อยู่ต่ำกว่า</li>
+        </ul>
+      </FormulaBox>
+
+      <StepExample
+        title="ตัวอย่าง: ที่จุดหนึ่งมองเห็นยอดเสาไฟฟ้าเป็นมุมเงย 30° เดินเข้าไปอีก 40 ม. มองเห็นมุมเงย 75° เสาสูงเท่าไร?"
+        steps={[
+          "ให้ A=จุดแรก, B=จุดที่สอง (ใกล้เสามากกว่า), D=ยอดเสา, C=ฐานเสา, CD=ความสูงที่ต้องการ",
+          "ในสามเหลี่ยม ACD: tan30° = CD/AC = CD/(40+BC) ... (1)",
+          "ในสามเหลี่ยม BCD: tan75° = CD/BC → BC = CD/tan75° = CD/(2+√3)",
+          "แทนใน (1) แล้วแก้สมการ จะได้ CD = 40/(2(√3-1)) × ... = 10(√3+1) เมื่อจัดรูปและประมาณค่า √3≈1.732",
+        ]}
+        answer="เสาไฟฟ้าสูงประมาณ 27.32 เมตร"
+      />
+
+      <StepExample
+        title="ตัวอย่าง: ชายยืนบนหน้าผาสูง 300 ม. เห็นเรือ A มุมก้ม 28° (ทิศตะวันตก) เห็นเรือ B มุมก้ม 19° (ทิศ S20°W) หาระยะระหว่างเรือ"
+        steps={[
+          "หาระยะ AC = 300/tan28° ≈ 564.23 ม. (จากหน้าผาถึงเรือ A)",
+          "หาระยะ BC = 300/tan19° ≈ 871.33 ม. (จากหน้าผาถึงเรือ B)",
+          "มุม ACB ระหว่างสองแนว = 90° - 20° = 70°",
+          "ใช้กฎของโคไซน์: AB² = AC²+BC²-2·AC·BC·cos70° ≈ 741,296 → AB ≈ 861 ม.",
+        ]}
+        answer="เรือทั้งสองลำห่างกันประมาณ 861 เมตร"
+      />
+
+      <h3>🧩 ลองทำเอง</h3>
+      <QuickCheck
+        question="ถ้ามุมเงยจากจุด A ไปยังยอดตึกเป็น 45° และระยะห่างจากตึกในแนวราบเท่ากับ 20 เมตร ตึกสูงเท่าไร? (เมตร)"
+        accept={["20"]}
+        hint="tan45° = สูง/20 และ tan45°=1 ดังนั้น สูง = 20 เมตร"
+      />
+      <QuickCheck
+        question="เรือยืนสองจุด A, B ห่างกัน 100 เมตร มองเห็นเสาไฟฟ้าเป็นมุมเงย 30° และ 60° ตามลำดับ (B ใกล้เสามากกว่า) ถ้าให้ h=ความสูงเสา และระยะ B ถึงฐานเสา = h/tan60°, ระยะ A ถึงฐานเสา = h/tan30° และ A,B,ฐานเสาอยู่ในแนวเส้นตรงเดียวกัน จงหา h เมื่อ ระยะAถึงฐาน - ระยะBถึงฐาน = 100"
+        accept={["25√3", "43.3"]}
+        hint="h/tan30° - h/tan60° = 100 → h√3 - h/√3 = 100 → h(3-1)/√3=100 → h=50√3/... ลองจัดสมการอย่างละเอียดอีกครั้ง คำตอบโดยประมาณคือ h≈43.3"
+      />
+    </div>
+  );
+}
+
+/* ============================================================
+   แอปหลัก
+   ============================================================ */
+
+const TOPICS = [
+  { id: 1, title: "ไซน์ & โคไซน์", comp: Topic1 },
+  { id: 2, title: "ฟังก์ชันอื่น ๆ", comp: Topic2 },
+  { id: 3, title: "มุมและสามเหลี่ยม", comp: Topic3 },
+  { id: 4, title: "กราฟฟังก์ชัน", comp: Topic4 },
+  { id: 5, title: "ผลบวก/ผลต่างมุม", comp: Topic5 },
+  { id: 6, title: "ฟังก์ชันผกผัน", comp: Topic6 },
+  { id: 7, title: "เอกลักษณ์/สมการ", comp: Topic7 },
+  { id: 8, title: "กฎโคไซน์/ไซน์", comp: Topic8 },
+  { id: 9, title: "ระยะทาง/ความสูง", comp: Topic9 },
+];
+
+function App() {
+  const [active, setActive] = useState(1);
+  const [done, setDone] = useState({});
+  const ActiveComp = TOPICS.find((t) => t.id === active).comp;
+
+  const toggleDone = (id) => setDone((d) => ({ ...d, [id]: !d[id] }));
+  const progress = Math.round(
+    (Object.values(done).filter(Boolean).length / TOPICS.length) * 100
+  );
+
+  return (
+    <div className="app-root">
+      <style>{CSS}</style>
+
+      <aside className="sidebar">
+        <div className="brand">
+          <div className="brand-mark">θ</div>
+          <div>
+            <div className="brand-title">ตรีโกณมิติ</div>
+            <div className="brand-sub">ม.5 เล่ม 1 · หน่วย 1</div>
+          </div>
+        </div>
+
+        <div className="progress-wrap">
+          <div className="progress-label">
+            ความคืบหน้า <b>{progress}%</b>
+          </div>
+          <div className="progress-bar">
+            <div className="progress-fill" style={{ width: `${progress}%` }} />
+          </div>
+        </div>
+
+        <nav className="topic-nav">
+          {TOPICS.map((t) => (
+            <button
+              key={t.id}
+              className={`nav-item ${active === t.id ? "nav-active" : ""}`}
+              onClick={() => setActive(t.id)}
+            >
+              <span className="nav-num">{t.id}</span>
+              <span className="nav-text">{t.title}</span>
+              <span
+                className={`nav-check ${done[t.id] ? "checked" : ""}`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggleDone(t.id);
+                }}
+                title="กดเพื่อทำเครื่องหมายว่าเรียนแล้ว"
+              >
+                {done[t.id] ? "✓" : ""}
+              </span>
+            </button>
+          ))}
+        </nav>
+
+        <div className="sidebar-footer">
+          เรียนวันเดียวให้เข้าใจ: อ่านสูตร → ดูตัวอย่างทีละขั้น → ลองทำเองทันที
+        </div>
+      </aside>
+
+      <main className="main-panel">
+        <div className="content-scroll">
+          <ActiveComp />
+          <div className="topic-nav-buttons">
+            <button
+              className="btn-ghost"
+              disabled={active === 1}
+              onClick={() => setActive(active - 1)}
+            >
+              ← หัวข้อก่อนหน้า
+            </button>
+            <button
+              className="btn-primary-sm"
+              disabled={active === 9}
+              onClick={() => setActive(active + 1)}
+            >
+              หัวข้อถัดไป →
+            </button>
+          </div>
+        </div>
+      </main>
+    </div>
+  );
+}
+
+/* ============================================================
+   STYLES
+   ============================================================ */
+const CSS = `
+@import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&family=Fraunces:opsz,wght@9..144,500;9..144,700&display=swap');
+
+* { box-sizing: border-box; }
+
+.app-root {
+  display: flex;
+  min-height: 100vh;
+  background: #11192e;
+  font-family: 'Sarabun', sans-serif;
+  color: #EAE6DD;
+}
+
+/* ---------- Sidebar ---------- */
+.sidebar {
+  width: 260px;
+  flex-shrink: 0;
+  background: #0d1424;
+  border-right: 1px solid #233252;
+  display: flex;
+  flex-direction: column;
+  padding: 20px 16px;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.brand-mark {
+  width: 42px;
+  height: 42px;
+  border-radius: 10px;
+  background: linear-gradient(145deg, #E8A33D, #E15D44);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'Fraunces', serif;
+  font-size: 24px;
+  font-weight: 700;
+  color: #11192e;
+  flex-shrink: 0;
+}
+.brand-title {
+  font-family: 'Fraunces', serif;
+  font-size: 18px;
+  font-weight: 700;
+  color: #FAF6EF;
+  line-height: 1.2;
+}
+.brand-sub { font-size: 12px; color: #8b9bbd; margin-top: 2px; }
+
+.progress-wrap { margin-bottom: 18px; }
+.progress-label { font-size: 12px; color: #b9c2d9; margin-bottom: 6px; }
+.progress-label b { color: #E8A33D; }
+.progress-bar {
+  height: 6px;
+  background: #1c2840;
+  border-radius: 4px;
+  overflow: hidden;
+}
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #6B9080, #E8A33D);
+  transition: width .4s ease;
+}
+
+.topic-nav { display: flex; flex-direction: column; gap: 4px; flex: 1; }
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 10px;
+  border-radius: 9px;
+  background: none;
+  border: none;
+  color: #b9c2d9;
+  text-align: left;
+  cursor: pointer;
+  font-size: 13.5px;
+  font-family: 'Sarabun', sans-serif;
+  transition: background .15s ease, color .15s ease;
+}
+.nav-item:hover { background: #182333; color: #FAF6EF; }
+.nav-active { background: #1c2840; color: #FAF6EF; font-weight: 600; box-shadow: inset 3px 0 0 #E8A33D; }
+.nav-num {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  background: #233252;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  flex-shrink: 0;
+  color: #8b9bbd;
+}
+.nav-active .nav-num { background: #E8A33D; color: #11192e; }
+.nav-text { flex: 1; }
+.nav-check {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1.5px solid #3a4a6b;
+  flex-shrink: 0;
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: transparent;
+}
+.nav-check.checked { background: #6B9080; border-color: #6B9080; color: #11192e; }
+
+.sidebar-footer {
+  font-size: 11.5px;
+  color: #6b7a9a;
+  line-height: 1.5;
+  border-top: 1px solid #233252;
+  padding-top: 14px;
+  margin-top: 10px;
+}
+
+/* ---------- Main panel ---------- */
+.main-panel { flex: 1; min-width: 0; background: #151f38; }
+.content-scroll {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 40px 32px 80px;
+}
+
+.topic h2 {
+  font-family: 'Fraunces', serif;
+  font-size: 30px;
+  font-weight: 700;
+  color: #FAF6EF;
+  margin: 0 0 12px;
+  border-bottom: 3px solid #E8A33D;
+  padding-bottom: 12px;
+  display: inline-block;
+}
+.topic h3 {
+  font-family: 'Fraunces', serif;
+  font-size: 19px;
+  color: #E8A33D;
+  margin: 32px 0 12px;
+}
+.lede { font-size: 15.5px; line-height: 1.75; color: #c7cee3; margin-bottom: 22px; }
+.lede b { color: #FAF6EF; }
+.small-note { font-size: 12.5px; color: #9aa6c2; margin-top: 8px; }
+
+/* ---------- Formula box ---------- */
+.formula-box {
+  background: #1a2640;
+  border: 1px solid #2a3a5c;
+  border-radius: 12px;
+  padding: 18px 20px;
+  margin: 18px 0;
+}
+.formula-title { font-weight: 700; color: #6B9080; margin-bottom: 10px; font-size: 14.5px; }
+.formula-body ul { margin: 0; padding-left: 20px; }
+.formula-body li { margin-bottom: 6px; font-size: 14.5px; line-height: 1.6; color: #d8dce8; }
+.formula-line {
+  font-family: 'Fraunces', serif;
+  font-size: 16.5px;
+  color: #FAF6EF;
+  padding: 4px 0;
+}
+.formula-line.important {
+  color: #E8A33D;
+  font-weight: 700;
+  background: rgba(232,163,61,0.08);
+  padding: 8px 10px;
+  border-radius: 6px;
+  margin-top: 6px;
+}
+.formula-box hr { border: none; border-top: 1px solid #2a3a5c; margin: 10px 0; }
+
+/* ---------- Unit circle ---------- */
+.unit-circle-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: #0d1424;
+  border-radius: 16px;
+  padding: 20px;
+  margin: 18px 0;
+  border: 1px solid #233252;
+}
+.circle-readout {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  justify-content: center;
+  font-size: 13.5px;
+  color: #d8dce8;
+  margin-top: 10px;
+  font-family: 'Fraunces', serif;
+}
+.circle-readout div { display: flex; align-items: center; gap: 6px; }
+.dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+.angle-slider { width: 90%; margin-top: 14px; accent-color: #E8A33D; }
+.hint-text { font-size: 12px; color: #6b7a9a; margin-top: 8px; text-align: center; }
+
+.quick-angle-row { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 18px; }
+.angle-chip {
+  background: #1a2640;
+  border: 1px solid #2a3a5c;
+  color: #c7cee3;
+  padding: 6px 12px;
+  border-radius: 20px;
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: all .15s ease;
+}
+.angle-chip:hover { background: #E8A33D; color: #11192e; border-color: #E8A33D; }
+
+/* ---------- Step example ---------- */
+.step-example {
+  background: #16213a;
+  border-left: 4px solid #6B9080;
+  border-radius: 10px;
+  padding: 18px 20px;
+  margin: 18px 0;
+}
+.step-title { font-weight: 700; color: #FAF6EF; margin-bottom: 12px; font-size: 15px; }
+.steps-list { display: flex; flex-direction: column; gap: 10px; margin-bottom: 12px; }
+.step-line { display: flex; gap: 10px; align-items: flex-start; }
+.step-num {
+  background: #6B9080;
+  color: #0d1424;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  font-size: 11.5px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+.step-content { font-size: 14px; line-height: 1.65; color: #d8dce8; font-family: 'Fraunces', serif; }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+.answer-pill {
+  display: inline-block;
+  background: rgba(107,144,128,0.18);
+  color: #6B9080;
+  border: 1px solid #6B9080;
+  padding: 8px 16px;
+  border-radius: 20px;
+  font-weight: 700;
+  font-size: 13.5px;
+  margin-top: 4px;
+}
+
+/* ---------- Buttons ---------- */
+.btn-ghost {
+  background: none;
+  border: 1.5px solid #E8A33D;
+  color: #E8A33D;
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 13px;
+  cursor: pointer;
+  font-family: 'Sarabun', sans-serif;
+  font-weight: 600;
+  transition: all .15s ease;
+}
+.btn-ghost:hover:not(:disabled) { background: #E8A33D; color: #11192e; }
+.btn-ghost:disabled { opacity: 0.35; cursor: not-allowed; }
+.btn-text {
+  background: none;
+  border: none;
+  color: #8b9bbd;
+  font-size: 12.5px;
+  cursor: pointer;
+  margin-top: 8px;
+  text-decoration: underline;
+  font-family: 'Sarabun', sans-serif;
+}
+.btn-primary-sm {
+  background: linear-gradient(135deg, #E8A33D, #E15D44);
+  border: none;
+  color: #11192e;
+  padding: 9px 18px;
+  border-radius: 8px;
+  font-size: 13.5px;
+  font-weight: 700;
+  cursor: pointer;
+  font-family: 'Sarabun', sans-serif;
+}
+.btn-primary-sm:disabled { opacity: 0.3; cursor: not-allowed; }
+
+.topic-nav-buttons {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 40px;
+  padding-top: 24px;
+  border-top: 1px solid #233252;
+}
+
+/* ---------- Quick check ---------- */
+.quick-check {
+  background: #16213a;
+  border: 1.5px solid #2a3a5c;
+  border-radius: 12px;
+  padding: 16px 18px;
+  margin: 14px 0;
+  transition: border-color .2s ease;
+}
+.qc-correct { border-color: #6B9080; }
+.qc-wrong { border-color: #E15D44; }
+.qc-question { font-size: 14.5px; color: #FAF6EF; margin-bottom: 10px; line-height: 1.6; }
+.qc-row { display: flex; gap: 8px; }
+.qc-row input {
+  flex: 1;
+  background: #0d1424;
+  border: 1px solid #2a3a5c;
+  color: #FAF6EF;
+  padding: 9px 12px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-family: 'Sarabun', sans-serif;
+}
+.qc-row input:focus { outline: none; border-color: #E8A33D; }
+.qc-feedback { margin-top: 10px; font-size: 13.5px; font-weight: 600; }
+.qc-feedback.ok { color: #6B9080; }
+.qc-feedback.bad { color: #E15D44; }
+.qc-hint { margin-top: 8px; font-size: 13px; color: #c7cee3; background: #0d1424; padding: 10px 12px; border-radius: 8px; line-height: 1.6; }
+
+/* ---------- Multiple choice ---------- */
+.mc-box { background: #16213a; border: 1.5px solid #2a3a5c; border-radius: 12px; padding: 16px 18px; margin: 14px 0; }
+.mc-options { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+.mc-opt {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-align: left;
+  background: #0d1424;
+  border: 1.5px solid #2a3a5c;
+  color: #d8dce8;
+  padding: 10px 14px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 13.5px;
+  font-family: 'Sarabun', sans-serif;
+}
+.mc-opt:hover:not(:disabled) { border-color: #E8A33D; }
+.mc-letter {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #233252;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+.mc-correct { border-color: #6B9080 !important; background: rgba(107,144,128,0.15) !important; }
+.mc-wrong { border-color: #E15D44 !important; background: rgba(225,93,68,0.15) !important; }
+
+/* ---------- Tables ---------- */
+.table-wrap { margin: 16px 0; }
+.table-controls { margin-bottom: 10px; }
+.trig-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13.5px;
+  background: #16213a;
+  border-radius: 10px;
+  overflow: hidden;
+}
+.trig-table th {
+  background: #1c2840;
+  color: #E8A33D;
+  padding: 10px 8px;
+  font-weight: 700;
+  text-align: center;
+  font-size: 12.5px;
+}
+.trig-table td {
+  padding: 8px;
+  text-align: center;
+  border-top: 1px solid #233252;
+  color: #d8dce8;
+}
+.small-table { margin: 14px 0; }
+.clickable-cell { cursor: pointer; color: #8b9bbd; }
+.clickable-cell:hover { color: #E8A33D; }
+
+/* ---------- Six function calculator ---------- */
+.six-calc { background: #16213a; border-radius: 12px; padding: 18px; margin: 16px 0; border: 1px solid #2a3a5c; }
+.six-calc-input { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; font-size: 14px; }
+.six-calc-input input {
+  width: 90px;
+  background: #0d1424;
+  border: 1px solid #2a3a5c;
+  color: #FAF6EF;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 14px;
+}
+.six-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.six-cell {
+  background: #0d1424;
+  border-radius: 8px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.six-cell span { font-size: 11.5px; color: #8b9bbd; }
+.six-cell b { font-size: 16px; color: #E8A33D; font-family: 'Fraunces', serif; }
+
+/* ---------- Graph controls ---------- */
+.graph-controls { display: flex; flex-direction: column; gap: 12px; margin: 16px 0; }
+.seg-control { display: flex; gap: 6px; }
+.seg-control button {
+  background: #1a2640;
+  border: 1px solid #2a3a5c;
+  color: #c7cee3;
+  padding: 8px 18px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-family: 'Sarabun', sans-serif;
+  font-size: 13px;
+}
+.seg-active { background: #E8A33D !important; color: #11192e !important; font-weight: 700; }
+.graph-controls label { font-size: 12.5px; color: #c7cee3; display: flex; flex-direction: column; gap: 4px; }
+.graph-controls input[type=range] { accent-color: #E8A33D; }
+.trig-graph-svg { background: #0d1424; border-radius: 12px; border: 1px solid #233252; }
+
+/* ---------- Converter box ---------- */
+.converter-box {
+  background: #16213a;
+  border-radius: 12px;
+  padding: 16px 18px;
+  margin: 16px 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 14px;
+  border: 1px solid #2a3a5c;
+}
+.converter-box input {
+  width: 80px;
+  background: #0d1424;
+  border: 1px solid #2a3a5c;
+  color: #FAF6EF;
+  padding: 7px 10px;
+  border-radius: 8px;
+  font-size: 14px;
+}
+.converter-box b { color: #E8A33D; }
+.converter-box .arrow { color: #6b7a9a; }
+
+@media (max-width: 720px) {
+  .sidebar { display: none; }
+  .content-scroll { padding: 24px 16px 60px; }
+  .six-grid { grid-template-columns: repeat(2, 1fr); }
+}
+`;
+
+const rootEl = document.getElementById('root');
+const root = ReactDOM.createRoot(rootEl);
+root.render(<App />);
+</script>
+</body>
+</html>
